@@ -61,26 +61,25 @@ def on_startup():
 def index_videos():
     db: Session = next(database.get_db())
     try:
-        video_extensions = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
         print(f"Starting video indexing in: {VIDEO_FOLDER}")
-        count_added = 0
+        existing_filepaths = {
+            result[0] for result in db.query(database.Video.filepath).all()
+        }
+
+        video_extensions = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+        new_videos_to_add = []
         for video_file in VIDEO_FOLDER.rglob("*"):
             if video_file.is_file() and video_file.suffix.lower() in video_extensions:
                 abs_filepath_str = str(video_file.resolve())
-                existing_video = (
-                    db.query(database.Video)
-                    .filter(database.Video.filepath == abs_filepath_str)
-                    .first()
-                )
-                if not existing_video:
-                    new_video = database.Video(
+                if abs_filepath_str not in existing_filepaths:
+                    new_videos_to_add.append(database.Video(
                         filepath=abs_filepath_str, filename=video_file.name
-                    )
-                    db.add(new_video)
-                    count_added += 1
-        if count_added > 0:
+                    ))
+
+        if new_videos_to_add:
+            db.add_all(new_videos_to_add)
             db.commit()
-        print(f"Video indexing complete. Added {count_added} new videos.")
+        print(f"Video indexing complete. Added {len(new_videos_to_add)} new videos.")
     except Exception as e:
         print(f"Error during video indexing: {e}")
         db.rollback()
