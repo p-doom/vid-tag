@@ -3,6 +3,10 @@
 A minimalist implementation of a video labeling interface. We internally use this tool to annotate videos for cleanliness in order to train a data filtering  model (cf. [Video Pre-training](https://arxiv.org/abs/2206.11795), [Genie](https://arxiv.org/abs/2402.15391)).
 
 ## Usage
+
+![vid-tag interface](https://raw.githubusercontent.com/p-doom/vid-tag/main/img/preview.gif)
+
+
 Install the requirements with:
 ```bash
 pip install -r requirements.txt
