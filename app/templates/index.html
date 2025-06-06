@@ -58,6 +58,7 @@
         <div id="noVideoMessage" style="display: none;">
             <p class="info">No more unannotated videos found, or an error occurred while loading.</p>
         </div>
+ <script> videoPlayer.playbackRate = 5.0; </script>
 
         <div class="controls">
             <div id="tagButtonsContainer">
@@ -147,6 +148,7 @@
                 if (data && data.id) {
                     videoPlayer.src = data.web_path;
                     videoPlayer.load();
+                    videoPlayer.playbackRate = 5.0;
                     videoPlayer.play().catch(e => console.warn("Autoplay was prevented:", e));
                     videoIdSpan.textContent = data.id;
                     videoFilenameSpan.textContent = data.filename;
@@ -249,6 +251,10 @@
                     event.preventDefault(); 
                 }
             }
+        });
+
+        videoPlayer.addEventListener('ended', () => {
+        videoPlayer.play();
         });
 
         document.addEventListener('DOMContentLoaded', () => {
