@@ -24,3 +24,12 @@ Finally, simply run the webserver:
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+You can annotate by clicking on the tags or by using the provided keybindings (number keys by default).
+
+## Annotation database
+vid-tag saves your annotations in a lightweight sqlite3 database with the following table schema:
+
+```
+| id | filepath | filename | is_annotated | tags |
+```
