@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" type="image/x-icon">
+    <title>vid-tag</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 800px; padding: 20px; }
+        h1 { text-align: center; margin-bottom: 20px; }
+        video { width: 100%; max-height: 500px; margin-bottom: 15px; background-color: #000; border: 1px solid #ccc; }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        #tagButtonsContainer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        #tagButtonsContainer button {
+            padding: 8px 12px;
+            border: 1px solid #007bff;
+            cursor: pointer;
+            background-color: #e7f3ff;
+        }
+        #tagButtonsContainer button:hover { background-color: #007bff; color: white; }
+        #tagButtonsContainer button:disabled, .controls button:disabled { background-color: #eee; color: #aaa; border-color: #ccc; cursor: not-allowed; }
+        #tagButtonsContainer button.tag-button-pressed {
+            background-color: #0056b3;
+            color: white;
+            border-color: #004085;
+        }
+        .controls button#nextVideoBtn { padding: 8px 12px; background-color: #28a745; color: white; border: 1px solid #1e7e34; cursor: pointer; }
+        .controls button#nextVideoBtn:hover { background-color: #1e7e34; }
+        .message { padding: 10px; margin-bottom: 15px; border: 1px solid; }
+        .success { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+        .error { background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+        .info { background-color: #cff4fc; color: #055160; border: 1px solid #b6effb; }
+        #currentVideoInfo p, .stats p { margin: 5px 0; }
+        #currentVideoInfo span, .stats span { font-weight: bold; }
+        .stats { margin-top: 20px; padding: 10px; border: 1px solid #eee;}
+        .stats h3 { margin-top: 0; }
+        #noVideoMessage { text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>vid-tag</h1>
+        <div id="videoPlayerContainer">
+            <video id="videoPlayer" controls autoplay></video>
+        </div>
+        <div id="noVideoMessage" style="display: none;">
+            <p class="info">No more unannotated videos found, or an error occurred while loading.</p>
+        </div>
+
+        <div class="controls">
+            <div id="tagButtonsContainer">
+            </div>
+            <button id="nextVideoBtn">Skip Video</button>
+        </div>
+        <div id="messageArea" class="message" style="display: none;"></div>
+        
+        <div id="currentVideoInfo">
+            <p>Current Video ID: <span id="videoIdSpan">N/A</span></p>
+            <p>Filename: <span id="videoFilenameSpan">N/A</span></p>
+        </div>
+
+        <div class="stats">
+            <h3>Annotation Stats</h3>
+            <p>Total Videos: <span id="totalVideos">0</span></p>
+            <p>Annotated: <span id="annotatedVideos">0</span></p>
+            <p>Unannotated: <span id="unannotatedVideos">0</span></p>
+        </div>
+    </div>
+
+    <script>
+        const videoPlayer = document.getElementById('videoPlayer');
+        const nextVideoBtn = document.getElementById('nextVideoBtn');
+        const videoIdSpan = document.getElementById('videoIdSpan');
+        const tagButtonsContainer = document.getElementById('tagButtonsContainer');
+        const videoFilenameSpan = document.getElementById('videoFilenameSpan');
+        const messageArea = document.getElementById('messageArea');
+        const noVideoMessage = document.getElementById('noVideoMessage');
+        const videoPlayerContainer = document.getElementById('videoPlayerContainer');
+
+        const totalVideosSpan = document.getElementById('totalVideos');
+        const annotatedVideosSpan = document.getElementById('annotatedVideos');
+        const unannotatedVideosSpan = document.getElementById('unannotatedVideos');
+
+        let currentVideoId = null;
+        const predefinedTags = {{ tags | tojson | safe }};
+        nextVideoBtn.disabled = true;
+
+        function showUIMessage(message, type = 'info') {
+            messageArea.textContent = message;
+            messageArea.className = `message ${type}`;
+            messageArea.style.display = 'block';
+            setTimeout(() => { messageArea.style.display = 'none'; }, 5000);
+        }
+
+        function clearPressedButtonStyles() {
+            const pressedButtons = tagButtonsContainer.querySelectorAll('.tag-button-pressed');
+            pressedButtons.forEach(btn => btn.classList.remove('tag-button-pressed'));
+        }
+
+        function updateTagButtonStates(enabled) {
+            const buttons = tagButtonsContainer.querySelectorAll('button');
+            if (enabled) {
+                clearPressedButtonStyles();
+            }
+            buttons.forEach(btn => btn.disabled = !enabled);
+        }
+
+        function createTagButtons() {
+            tagButtonsContainer.innerHTML = '';
+            predefinedTags.forEach((tag, index) => {
+                const button = document.createElement('button');
+                button.textContent = `(${index + 1}) ${tag}`;
+                button.dataset.tag = tag;
+                button.dataset.key = (index + 1).toString();
+                button.addEventListener('click', () => {
+                    if (currentVideoId) annotateVideo(tag);
+                });
+                tagButtonsContainer.appendChild(button);
+            });
+            updateTagButtonStates(false);
+        }
+
+        async function fetchNextVideo() {
+            nextVideoBtn.disabled = true;
+            updateTagButtonStates(false);
+
+            try {
+                const response = await fetch('/next-video');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({detail: "Unknown server error"}));
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.detail}`);
+                }
+                const data = await response.json();
+
+                if (data && data.id) {
+                    videoPlayer.src = data.web_path;
+                    videoPlayer.load();
+                    videoPlayer.play().catch(e => console.warn("Autoplay was prevented:", e));
+                    videoIdSpan.textContent = data.id;
+                    videoFilenameSpan.textContent = data.filename;
+                    currentVideoId = data.id;
+                    
+                    noVideoMessage.style.display = 'none';
+                    videoPlayerContainer.style.display = 'block';
+                    updateTagButtonStates(true);
+                } else {
+                    currentVideoId = null;
+                    videoIdSpan.textContent = 'N/A';
+                    videoFilenameSpan.textContent = 'N/A';
+                    videoPlayer.src = '';
+                    noVideoMessage.style.display = 'block';
+                    videoPlayerContainer.style.display = 'none';
+                    updateTagButtonStates(false);
+                    if (!data) {
+                         showUIMessage('No more unannotated videos available.', 'info');
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching next video:', error);
+                showUIMessage(`Error fetching video: ${error.message}`, 'error');
+                noVideoMessage.style.display = 'block';
+                videoPlayerContainer.style.display = 'none';
+                updateTagButtonStates(false);
+            } finally {
+                nextVideoBtn.disabled = false;
+                fetchStats();
+            }
+        }
+
+        async function annotateVideo(tag) {
+            if (!currentVideoId) {
+                showUIMessage('No video selected to tag.', 'error');
+                return;
+            }
+
+            clearPressedButtonStyles();
+            const allTagButtons = tagButtonsContainer.querySelectorAll('button');
+            allTagButtons.forEach(btn => {
+                if (btn.dataset.tag === tag) {
+                    btn.classList.add('tag-button-pressed');
+                }
+            });
+            updateTagButtonStates(false);
+            nextVideoBtn.disabled = true;
+            let success = false;
+
+            try {
+                const response = await fetch(`/tag-video/${currentVideoId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag: tag }),
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    showUIMessage(`Video tagged as "${data.tag}" successfully! Loading next...`, 'success');
+                    success = true;
+                    fetchNextVideo();
+                } else {
+                    showUIMessage(`Error tagging video: ${data.detail || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error submitting tag:', error);
+                showUIMessage(`Error submitting tag: ${error.message}`, 'error');
+            } finally {
+                if (!success) {
+                    if (currentVideoId) {
+                        updateTagButtonStates(true);
+                    }
+                    nextVideoBtn.disabled = false;
+                    fetchStats();
+                }
+            }
+        }
+
+        async function fetchStats() {
+            try {
+                const response = await fetch('/stats');
+                const data = await response.json();
+                if (response.ok) {
+                    totalVideosSpan.textContent = data.total_videos;
+                    annotatedVideosSpan.textContent = data.annotated_videos;
+                    unannotatedVideosSpan.textContent = data.unannotated_videos;
+                }
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            }
+        }
+
+        nextVideoBtn.addEventListener('click', fetchNextVideo);
+
+        document.addEventListener('keydown', (event) => {
+            if (currentVideoId && predefinedTags.length > 0) {
+                const keyNum = parseInt(event.key);
+                if (!isNaN(keyNum) && keyNum > 0 && keyNum <= predefinedTags.length) {
+                    const tag = predefinedTags[keyNum - 1];
+                    annotateVideo(tag);
+                    event.preventDefault(); 
+                }
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            createTagButtons();
+            fetchNextVideo(); 
+        });
+    </script>
+</body>
+</html>
